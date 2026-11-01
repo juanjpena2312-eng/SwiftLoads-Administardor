@@ -1,25 +1,37 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
+import AdminLayout from '@/layouts/AdminLayout.vue'
+import LoginView from '@/views/LoginView.vue'
+import DashboardView from '@/views/DashboardView.vue'
+import PedidosView from '@/views/PedidosView.vue'
+import UsuariosView from '@/views/UsuariosView.vue'
+import ProductosView from '@/views/ProductosView.vue'
 
 const routes = [
+  { path: '/login', name: 'Login', component: LoginView },
   {
     path: '/',
-    name: 'home',
-    component: HomeView
+    component: AdminLayout,
+    children: [
+      { path: '', redirect: '/dashboard' },
+      { path: 'dashboard', name: 'Dashboard', component: DashboardView },
+      { path: 'pedidos', name: 'Pedidos', component: PedidosView },
+      { path: 'usuarios', name: 'Usuarios', component: UsuariosView },
+      { path: 'productos', name: 'Productos', component: ProductosView }
+    ]
   },
-  {
-    path: '/about',
-    name: 'about',
-    // route level code-splitting
-    // this generates a separate chunk (about.[hash].js) for this route
-    // which is lazy-loaded when the route is visited.
-    component: () => import(/* webpackChunkName: "about" */ '../views/AboutView.vue')
-  }
+  { path: '/:pathMatch(.*)*', redirect: '/dashboard' }
 ]
 
 const router = createRouter({
   history: createWebHistory(process.env.BASE_URL),
   routes
+})
+
+router.beforeEach(to => {
+  const autenticado = !!localStorage.getItem('admin_token')
+
+  if (to.path !== '/login' && !autenticado) return '/login'
+  if (to.path === '/login' && autenticado) return '/dashboard'
 })
 
 export default router
