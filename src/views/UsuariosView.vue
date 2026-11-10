@@ -9,7 +9,7 @@
             </v-btn>
         </div>
 
-        <!-- Buscador, filtro y botón -->
+        <!-- Buscador y filtros -->
         <v-row align="center" class="mb-2">
             <v-col cols="12" sm="5" md="4">
                 <v-text-field v-model="busqueda" label="Buscar usuarios" placeholder="Nombre o correo..."
@@ -32,26 +32,33 @@
 
         <!-- Tabla -->
         <v-card rounded="lg" elevation="1" class="users-card">
+            <v-progress-linear v-if="cargando" indeterminate color="success" />
+
             <v-table>
                 <thead>
                     <tr>
                         <th class="text-left">Usuario</th>
+
                         <th class="text-left sortable-header" @click="ordenarPor('nombre')">
                             Nombre
                             <v-icon size="small">{{ iconoOrden('nombre') }}</v-icon>
                         </th>
+
                         <th class="text-left sortable-header" @click="ordenarPor('correo')">
                             Correo
                             <v-icon size="small">{{ iconoOrden('correo') }}</v-icon>
                         </th>
+
                         <th class="text-left sortable-header" @click="ordenarPor('rol')">
                             Rol
                             <v-icon size="small">{{ iconoOrden('rol') }}</v-icon>
                         </th>
+
                         <th class="text-left sortable-header" @click="ordenarPor('estado')">
                             Estado
                             <v-icon size="small">{{ iconoOrden('estado') }}</v-icon>
                         </th>
+
                         <th class="text-center">Acciones</th>
                     </tr>
                 </thead>
@@ -75,9 +82,8 @@
                         <td class="text-no-wrap">{{ usuario.rol }}</td>
 
                         <td>
-                            <v-chip :color="usuario.estado === 'Activo' ? 'success' : 'error'"
-                                :variant="usuario.estado === 'Activo' ? 'tonal' : 'tonal'" size="small"
-                                class="font-weight-medium">
+                            <v-chip :color="usuario.estado === 'Activo' ? 'success' : 'error'" variant="tonal"
+                                size="small" class="font-weight-medium">
                                 {{ usuario.estado }}
                             </v-chip>
                         </td>
@@ -100,17 +106,17 @@
                         </td>
                     </tr>
 
-                    <tr v-if="usuariosFiltrados.length === 0">
+                    <tr v-if="!cargando && usuariosFiltrados.length === 0">
                         <td colspan="6" class="text-center py-8 text-medium-emphasis">
-                            {{ cargando ? 'Cargando usuarios...' : (errorCarga || 'No se encontraron usuarios.') }}
+                            {{ errorCarga || 'No se encontraron usuarios.' }}
                         </td>
                     </tr>
                 </tbody>
             </v-table>
         </v-card>
 
-        <!-- Diálogo provisional para las acciones -->
-        <v-dialog v-model="dialogo.visible" max-width="450">
+        <!-- Diálogo de acciones -->
+        <v-dialog v-model="dialogo.visible" max-width="450" persistent>
             <v-card rounded="lg">
                 <v-card-title class="pa-5">
                     {{ dialogo.titulo }}
@@ -118,6 +124,7 @@
 
                 <v-card-text>
                     {{ dialogo.mensaje }}
+
                     <div v-if="dialogo.usuario" class="mt-3">
                         <strong>{{ dialogo.usuario.nombre }}</strong>
                         <div>{{ dialogo.usuario.correo }}</div>
@@ -127,11 +134,13 @@
                 <v-card-actions class="pa-4">
                     <v-spacer />
 
-                    <v-btn v-if="dialogo.tipo === 'eliminar'" variant="text" @click="dialogo.visible = false">
+                    <v-btn v-if="dialogo.tipo === 'eliminar'" variant="text" :disabled="eliminando"
+                        @click="dialogo.visible = false">
                         Cancelar
                     </v-btn>
 
-                    <v-btn v-if="dialogo.tipo === 'eliminar'" color="error" @click="eliminarUsuario">
+                    <v-btn v-if="dialogo.tipo === 'eliminar'" color="error" :loading="eliminando"
+                        @click="eliminarUsuario">
                         Eliminar
                     </v-btn>
 
@@ -141,6 +150,11 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+
+        <!-- Notificaciones -->
+        <v-snackbar v-model="notificacion.visible" :color="notificacion.color" timeout="3500">
+            {{ notificacion.mensaje }}
+        </v-snackbar>
     </div>
 </template>
 
@@ -157,16 +171,18 @@ export default {
             ordenCampo: 'nombre',
             ordenAscendente: true,
 
+            cargando: false,
+            eliminando: false,
+            errorCarga: '',
+
+            usuarios: [],
+
             roles: [
                 'Todos los roles',
                 'Administrador',
                 'Cliente',
-                'Repartidor'
+                
             ],
-
-            usuarios: [],
-            cargando: false,
-            errorCarga: '',
 
             dialogo: {
                 visible: false,
@@ -174,6 +190,12 @@ export default {
                 mensaje: '',
                 tipo: '',
                 usuario: null
+            },
+
+            notificacion: {
+                visible: false,
+                mensaje: '',
+                color: 'success'
             }
         }
     },
@@ -198,7 +220,10 @@ export default {
                     const valorA = a[this.ordenCampo]
                     const valorB = b[this.ordenCampo]
 
-                    const resultado = String(valorA).localeCompare(String(valorB), 'es')
+                    const resultado = String(valorA).localeCompare(
+                        String(valorB),
+                        'es'
+                    )
 
                     return this.ordenAscendente ? resultado : -resultado
                 })
@@ -215,17 +240,21 @@ export default {
             this.errorCarga = ''
 
             try {
-                const { data } = await api.get('/admin/usuarios')
-                this.usuarios = data
+                const respuesta = await api.get('/admin/usuarios')
+
+                this.usuarios = respuesta.data
             } catch (error) {
-                this.errorCarga = mensajeError(error)
+                this.errorCarga = 'No se pudieron cargar los usuarios.'
+                this.mostrarNotificacion(mensajeError(error), 'error')
             } finally {
                 this.cargando = false
             }
         },
 
         iconoOrden(campo) {
-            if (this.ordenCampo !== campo) return 'mdi-unfold-more-horizontal'
+            if (this.ordenCampo !== campo) {
+                return 'mdi-unfold-more-horizontal'
+            }
 
             return this.ordenAscendente
                 ? 'mdi-arrow-up'
@@ -248,6 +277,14 @@ export default {
                 mensaje,
                 tipo,
                 usuario
+            }
+        },
+
+        mostrarNotificacion(mensaje, color = 'success') {
+            this.notificacion = {
+                visible: true,
+                mensaje,
+                color
             }
         },
 
@@ -279,15 +316,26 @@ export default {
         async eliminarUsuario() {
             const id = this.dialogo.usuario?.id
 
-            if (id === undefined || id === null) return
+            if (!id || this.eliminando) return
+
+            this.eliminando = true
 
             try {
-                await api.delete(`/admin/usuarios/${id}`)
-                this.usuarios = this.usuarios.filter(usuario => usuario.id !== id)
+                const respuesta = await api.delete(`/admin/usuarios/${id}`)
+
+                this.usuarios = this.usuarios.filter(
+                    usuario => usuario.id !== id
+                )
+
                 this.dialogo.visible = false
+
+                this.mostrarNotificacion(
+                    respuesta.data?.mensaje || 'Usuario eliminado correctamente.'
+                )
             } catch (error) {
-                this.dialogo.mensaje = mensajeError(error)
-                this.dialogo.tipo = ''
+                this.mostrarNotificacion(mensajeError(error), 'error')
+            } finally {
+                this.eliminando = false
             }
         }
     }
